@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Minecraft AFK Bot 教學：Render 雲端掛機 + IP 驗證終端機方案">
+<title>Minecraft 雲端掛機教學</title>
+
+<style>
+body{
+    background:#1a1a1a;
+    color:#eee;
+    font-family:Segoe UI;
+    line-height:1.7;
+    padding:20px;
+}
+h1,h2,h3{color:#00bfff;}
+pre{
+    background:#222;
+    padding:12px;
+    overflow-x:auto;
+}
+code{color:#0f0;}
+.warning{color:#ff5555;font-weight:bold;}
+.note{color:#ffff55;}
+hr{border:1px solid #444;}
+</style>
+</head>
+
+<body>
+
+<h1>☁ Minecraft 雲端掛機 Bot 教學</h1>
+
+<p>
+想領取 server 掛機獎勵又不想開遊戲？  
+本教學使用 <b>統一程式碼</b>，提供 <b>2 種運行模式</b>：
+</p>
+
+<ul>
+<li>✅ <b>無 IP 驗證</b> → 雲端 Render + UptimeRobot</li>
+<li>🔒 <b>有 IP 驗證</b> → 本地終端機掛機（可開機自動啟動）</li>
+</ul>
+
+<p class="warning">
+⚠ 請務必遵守伺服器規則，並使用你自己的 Minecraft 帳號！
+</p>
+
+<hr>
+
+<h2>運行模式差異</h2>
+<table border="1" cellspacing="0" cellpadding="5">
+<tr><th>模式</th><th>適用伺服器</th><th>特點</th></tr>
+<tr>
+<td>雲端 Render</td>
+<td>無 IP 限制</td>
+<td>24H 掛機 + Web 控制（/pause /resume）+ UptimeRobot 防休眠</td>
+</tr>
+<tr>
+<td>本地終端機</td>
+<td>有 IP 驗證</td>
+<td>依靠電腦運行，可設定開機自動啟動，不啟用 Web 控制</td>
+</tr>
+</table>
+
+<hr>
+
+<h2>統一程式碼範例 (index.js)</h2>
+
+<pre><code>const mineflayer = require('mineflayer');
+const fs = require('fs');
+const express = require('express');
+
+const app = express();
+const PORT = process.env.PORT || 10000;
+
+// ---------- 使用者注意 ----------
+/* 在這裡填入你的 Minecraft 帳號資訊
+   不要把你的帳號寫死在公開程式碼中 */
+const MINECRAFT_USERNAME = 'YOUR_EMAIL_OR_USERNAME';
+const MINECRAFT_AUTH = 'microsoft'; // 或 'mojang'
+
+// 伺服器設定
+const SERVER_HOST = 'YOUR_SERVER_IP_OR_DOMAIN';
+const SERVER_PORT = 25565;
+
+// 運行模式選擇
+// "cloud" = Render 雲端掛機
+// "local" = 本地終端機掛機（可開機自動啟動）
+const RUN_MODE = 'cloud'; 
+
+let sessionFile = 'session.json';
+let session;
+
+let botActive = true;
+let bot;
+
+function createBot() {
+    if (!botActive) return;
+
+    bot = mineflayer.createBot({
+        host: SERVER_HOST,
+        port: SERVER_PORT,
+        username: MINECRAFT_USERNAME,
+        auth: MINECRAFT_AUTH,
+        version: '1.20.4', // 適用伺服器版本
+        session: session
+    });
+
+    // ---------- Bot 事件 ----------
+    bot.on('microsoftAuth', (newSession) => {
+        session = newSession;
+        fs.writeFileSync(sessionFile, JSON.stringify(session, null, 2));
+        console.log('Microsoft session 已保存');
+    });
+
+    bot.on('spawn', () => {
+        console.log('Bot 已 spawn');
+        if (RUN_MODE === 'cloud') {
+            console.log('運行模式：雲端 Render');
+        } else {
+            console.log('運行模式：本地終端機');
+        }
+    });
+
+    bot.on('end', () => {
+        console.log('Bot 已掉線');
+        if (botActive) setTimeout(createBot, 5000); // 自動重連
+    });
+
+    bot.on('error', console.log);
+    bot.on('kicked', console.log);
+    bot.on('login', () => console.log('Bot 已登入'));
+}
+
+// 啟動 Bot
+createBot();
+
+// ------------------ Web 介面 ------------------
+if (RUN_MODE === 'cloud') {
+    // 雲端模式才啟用 Web 控制
+    app.get('/pause', (req, res) => {
+        botActive = false;
+        if (bot) bot.quit('被暫停');
+        res.send('Bot 已暫停<br><a href="/">回主頁</a>');
+    });
+
+    app.get('/resume', (req, res) => {
+        if (!botActive) {
+            botActive = true;
+            createBot();
+        }
+        res.send('Bot 已啟動<br><a href="/">回主頁</a>');
+    });
+
+    app.get('/', (req, res) => {
+        const botStatus = botActive ? (bot?.entity ? '在線' : '離線') : '暫停';
+        res.send(`
+            <html>
+            <head><title>Minecraft AFK Bot 控制</title></head>
+            <body style="background:#1a1a1a;color:white;font-family:sans-serif;">
+                <h2>Bot 控制面板</h2>
+                <p>Bot 狀態: ${botStatus}</p>
+                <a href="/pause"><button>暫停 Bot</button></a>
+                <a href="/resume"><button>啟動 Bot</button></a>
+            </body>
+            </html>
+        `);
+    });
+
+    app.listen(PORT, () => console.log(`Web server running on port ${PORT}`));
+} else {
+    console.log('本地終端機模式，不啟用 Web 介面');
+}</code></pre>
+
+<hr>
+
+<h2>使用說明</h2>
+
+<ol>
+<li>修改 index.js 中帳號、伺服器與運行模式</li>
+<li>執行 <code>npm install</code> 安裝依賴套件</li>
+<li>執行 <code>npm start</code> 啟動 Bot</li>
+<li>
+    <b>雲端 Render 模式</b>：搭配 UptimeRobot 防止休眠，使用 `/pause` 和 `/resume` 控制 Bot
+</li>
+<li>
+    <b>本地終端機模式</b>：可以設定 Windows 開機自動啟動（start.bat + shell:startup）
+</li>
+</ol>
+
+<hr>
+
+<h2>附錄：package.json 範例</h2>
+
+<pre><code>{
+  "name": "mc-afk-bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "express": "^4.22.1",
+    "mineflayer": "^4.33.0"
+  },
+  "scripts": {
+    "start": "node index.js"
+}</code></pre>
+
+<hr>
+
+<h2>安全提醒</h2>
+<ul>
+<li class="warning">不要把帳號或 session.json 上傳 GitHub！</li>
+<li>請使用自己的帳號</li>
+<li>雲端模式建議搭配 UptimeRobot 防止休眠</li>
+</ul>
+
+<hr>
+
+<h2>結語</h2>
+<p>統一程式碼，兩種模式自由切換，學習方便，掛機安全。祝你掛機愉快！</p>
+
+<hr>
+
+<h2>⚖ 免責聲明</h2>
+
+<p>
+本教學及範例程式僅供 <b>技術研究與學習用途</b>，並非鼓勵或教導違規行為。
+</p>
+
+<h3>1. 伺服器規則風險</h3>
+<ul>
+<li>各 Minecraft 伺服器可能禁止自動化掛機或 BOT。</li>
+<li>使用本教學程式造成的帳號封禁、警告或任何損失，<b>由使用者自行承擔</b>。</li>
+<li>建議先閱讀並遵守伺服器規則，再決定是否使用。</li>
+</ul>
+
+<h3>2. Minecraft / Mojang / Microsoft 條款</h3>
+<ul>
+<li>Minecraft 官方禁止帳號共享或濫用自動化程式。</li>
+<li>本教學只提供技術示範，請務必使用自己的帳號。</li>
+<li>如違反官方條款而被封號，<b>作者不承擔任何責任</b>。</li>
+</ul>
+
+<h3>3. 帳號安全提醒</h3>
+<ul>
+<li>請勿將你的帳號、密碼或 session.json 上傳到 GitHub 或公開網站。</li>
+<li>建議使用環境變數或私密設定管理帳號資訊。</li>
+<li>任何因帳號外洩造成的損失，<b>作者不承擔責任</b>。</li>
+</ul>
+
+<h3>4. 程式用途聲明</h3>
+<ul>
+<li>本程式僅為學習 Node.js 與 Mineflayer 技術示範。</li>
+<li>禁止用於攻擊、入侵或破壞他人系統。</li>
+<li>作者不對任何濫用行為負責。</li>
+</ul>
+
+<p class="note">
+✔ 總結：合法分享技術內容，使用者需自行評估風險，並遵守伺服器規則與官方條款。
+</p>
+
+
+</body>
+</html>
